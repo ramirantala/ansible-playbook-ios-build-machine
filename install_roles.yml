@@ -1,0 +1,5 @@
+# install_roles.yml
+#
+ - src: geerlingguy.homebrew
+ - src: rvm_io.rvm1-ruby
+
