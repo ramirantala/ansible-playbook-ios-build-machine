@@ -1,29 +1,25 @@
 ---
 - hosts: localhost
-  name: install homebrew and packages
+  name: Install homebrew, rvm and packages needed for IOS CI
+  vars:
+    rvm1_rubies:
+      - ruby-2.2.2
+    homebrew_installed_packages:
+      - gpg
+      - carthage
+      - ideviceinstaller
+      - imagemagick
+      - ghostscript
   roles:
-    - role: geerlingguy.homebrew
-    - { role: rvm_io.rvm1-ruby, rvm1_rubies: [ 'ruby-2.2.2' ], tags: ruby, sudo: True, rvm1_install_flags: '--user-install', rvm1_install_path: '/Users/{{local_username.stdout}}/.rvm', rvm1_user: '{{local_username.stdout}}' }
+    - { role: geerlingguy.homebrew, tags: brew }
+    - { role: rvm_io.rvm1-ruby, tags: ruby, sudo: True, rvm1_install_flags: '--user-install', rvm1_install_path: '/Users/{{local_username.stdout}}/.rvm', rvm1_user: '{{local_username.stdout}}' }
   pre_tasks:
     - name: get my username
       command: whoami
       register: local_username
-
-    - name: show deploy directory
-      debug: msg="Your username is {{local_username.stdout}}"
+      tags: ruby
 
   post_tasks:
-    - name: update homebrew
-      homebrew: update_homebrew=yes
-
-    - name: install packages
-      homebrew: name={{ item }} state=latest
-      with_items:
-        - carthage
-        - ideviceinstaller
-        - imagemagick
-        - ghostscript
-
     - name: install gems with rvm
       command: bash -lc "gem install {{ item }}"
       with_items:
@@ -32,3 +28,4 @@
         - scan
         - gym
         - xcpretty
+      tags: ruby
