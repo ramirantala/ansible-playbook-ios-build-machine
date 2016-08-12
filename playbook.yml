@@ -1,7 +1,9 @@
 ---
-- hosts: localhost
+- hosts: '{{ hosts }}'
   name: Install homebrew, rvm and packages needed for IOS CI
   vars:
+    xcode_dmg: Xcode_7.3.dmg
+    xcode_dmg_path: .
     rvm1_rubies:
       - ruby-2.2.2
     homebrew_installed_packages:
@@ -10,16 +12,42 @@
       - ideviceinstaller
       - imagemagick
       - ghostscript
+      - argon/mas/mas
+      - go
+      - coreutils
+#      - cask install java
   roles:
-    - { role: geerlingguy.homebrew, tags: brew }
-    - { role: rvm_io.rvm1-ruby, tags: ruby, sudo: True, rvm1_install_flags: '--user-install', rvm1_install_path: '/Users/{{local_username.stdout}}/.rvm', rvm1_user: '{{local_username.stdout}}' }
+    - { role: geerlingguy.homebrew, tags: [ 'brew', 'ruby' ] }
+    - { role: rvm_io.rvm1-ruby, tags: ruby, sudo: True, rvm1_install_flags: '--auto-dotfiles --user-install', rvm1_install_path: '/Users/{{local_username.stdout}}/.rvm', rvm1_user: '{{local_username.stdout}}' }
   pre_tasks:
     - name: get my username
       command: whoami
       register: local_username
+      tags: ruby, xcode
+
+    - name: add /usr/local/bin to bashrc
+      lineinfile: dest=/Users/{{local_username.stdout}}/.bashrc line='export PATH=$PATH:/usr/local/bin' insertafter='EOF' regexp='export PATH=\$PATH:/usr/local/bin' state=present create=true
+      tags: ruby, xcode
+
+    - name: make sure root does not own HomeBrew cache
+      file: recurse=yes path='/Library/Caches/Homebrew' owner={{local_username.stdout}} group=staff
+      become: yes
+      become_method: sudo
+      tags: ruby
+
+    - name: make sure root does not own homebrew-cask cache
+      file: recurse=yes path='/opt/homebrew-cask/' owner={{local_username.stdout}} group=staff
+      become: yes
+      become_method: sudo
       tags: ruby
 
   post_tasks:
+    - name: make sure root does not own .rvm
+      file: recurse=yes path='/Users/{{local_username.stdout}}/.rvm' owner={{local_username.stdout}} group=staff
+      become: yes
+      become_method: sudo
+      tags: ruby
+
     - name: install gems with rvm
       command: bash -lc "gem install {{ item }}"
       with_items:
@@ -28,4 +56,60 @@
         - scan
         - gym
         - xcpretty
+        - cocoapods
       tags: ruby
+
+    - name: Check if we already have the dmg
+      stat: path="/Users/{{local_username.stdout}}/{{ xcode_dmg }}"
+      register: xcode_download_path
+      tags: xcode
+
+    - name: Upload dmg
+      copy: src={{ xcode_dmg_path}}/{{ xcode_dmg }} dest=/Users/{{local_username.stdout}}
+      when: xcode_download_path.stat.exists == False
+      tags: xcode
+
+    - name: Mount the dmg with hdiutil
+      command: "hdiutil attach /Users/{{ local_username.stdout }}/{{ xcode_dmg }}"
+      args:
+          creates: /Volumes/Xcode/
+      tags: xcode
+
+    - name: copy files in place
+      synchronize:
+        src: /Volumes/Xcode/Xcode.app
+        dest: /Applications2
+      delegate_to: "{{ inventory_hostname }}"
+      become: yes
+      become_method: sudo
+      tags: xcode
+
+ #   - name: Install Xcode
+ #     command: cp -r /Volumes/Xcode/Xcode.app /Applications/
+ #     shell: tar cf - . | ( cd /Applications; tar xfp -)
+ #     args:
+ #         creates: /Applications/Xcode.app/
+ #         chdir: /Volumes/Xcode/Xcode.app
+ #     tags: xcode
+
+    - name: Accept license agreement
+      command: /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -license accept
+      become: yes
+      become_method: sudo
+      tags: xcode
+
+    - name: install "additional components" part 1
+      command: /usr/sbin/installer -pkg /Applications/Xcode.app/Contents/Resources/Packages/MobileDevice.pkg -target /
+      become: yes
+      become_method: sudo
+      tags: xcode
+
+    - name: install "additional components" part 2
+      command: /usr/sbin/installer -pkg /Applications/Xcode.app/Contents/Resources/Packages/MobileDeviceDevelopment.pkg -target /
+      become: yes
+      become_method: sudo
+      tags: xcode
+
+# TODO:
+#
+#  - python modules PIP!!
